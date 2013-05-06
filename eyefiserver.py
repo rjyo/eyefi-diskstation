@@ -24,23 +24,23 @@ import sys
 import os
 import socket
 import StringIO
+import ConfigParser
+from datetime import datetime
 
 import hashlib
 import binascii
 import tarfile
 
 import xml.sax
-from xml.sax.handler import ContentHandler
 import xml.dom.minidom
 
 from BaseHTTPServer import BaseHTTPRequestHandler
 import BaseHTTPServer
-
 import SocketServer
 
-#pike
-from datetime import datetime
-import ConfigParser
+from eyefi.sax_handler import EyeFiContentHandler
+import eyefi.log as logger
+log = logger.setup_custom_logger()
 
 # General architecture notes
 #
@@ -51,47 +51,6 @@ import ConfigParser
 # Starting this server creates a listener on port 59278. I use the BaseHTTPServer class included
 # with Python. I look for specific POST/GET request URLs and execute functions based on those
 # URLs.
-
-import eyefi.log as logger
-
-log = logger.setup_custom_logger()
-
-
-# Eye Fi XML SAX ContentHandler
-class EyeFiContentHandler(ContentHandler):
-    # These are the element names that I want to parse out of the XML
-    elementNamesToExtract = ["macaddress", "cnonce", "transfermode", "transfermodetimestamp", "fileid", "filename",
-                             "filesize", "filesignature"]
-
-    # For each of the element names I create a dictionary with the value to False
-    elementsToExtract = {}
-
-    # Where to put the extracted values
-    extractedElements = {}
-
-    def __init__(self):
-        self.extractedElements = {}
-
-        for elementName in self.elementNamesToExtract:
-            self.elementsToExtract[elementName] = False
-
-    def startElement(self, name, attributes):
-        # If the name of the element is a key in the dictionary elementsToExtract
-        # set the value to True
-        if name in self.elementsToExtract:
-            self.elementsToExtract[name] = True
-
-    def endElement(self, name):
-        # If the name of the element is a key in the dictionary elementsToExtract
-        # set the value to False
-        if name in self.elementsToExtract:
-            self.elementsToExtract[name] = False
-
-    def characters(self, content):
-        for elementName in self.elementsToExtract:
-            if self.elementsToExtract[elementName]:
-                self.extractedElements[elementName] = content
-
 
 # Implements an EyeFi server
 class EyeFiServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
@@ -128,7 +87,7 @@ class EyeFiServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
 # It implements the two most common HTTP methods, do_GET() and do_POST()
 
 class EyeFiRequestHandler(BaseHTTPRequestHandler):
-    # pike: these seem unused ?
+    # Overriding options
     protocol_version = 'HTTP/1.1'
     sys_version = ""
     server_version = "Eye-Fi Agent/2.0.4.0 (Windows XP SP2)"
@@ -231,14 +190,22 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
             log.debug("Connection closed.")
 
-    def render_xml(self, bodyElement):
+    def render_xml(self, name, elements):
         # Create the XML document to send back
         doc = xml.dom.minidom.Document()
+
+        element = doc.createElement(name)
+        element.setAttribute("xmlns", "http://localhost/api/soap/eyefilm")
+
+        for k in elements:
+            e = doc.createElement(k)
+            e.appendChild(doc.createTextNode(elements[k]))
+            element.appendChild(e)
 
         SOAPElement = doc.createElementNS("http://schemas.xmlsoap.org/soap/envelope/", "SOAP-ENV:Envelope")
         SOAPElement.setAttribute("xmlns:SOAP-ENV", "http://schemas.xmlsoap.org/soap/envelope/")
         SOAPBodyElement = doc.createElement("SOAP-ENV:Body")
-        SOAPBodyElement.appendChild(bodyElement)
+        SOAPBodyElement.appendChild(element)
         SOAPElement.appendChild(SOAPBodyElement)
         doc.appendChild(SOAPElement)
 
@@ -259,7 +226,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
     def markLastPhotoInRoll(self, postData):
         # Create the XML document to send back
         doc = xml.dom.minidom.Document()
-        return self.render_xml(doc.createElement("MarkLastPhotoInRollResponse"))
+        return self.render_xml("MarkLastPhotoInRollResponse", {})
 
     # Handles receiving the actual photograph from the card.
     # postData will most likely contain multipart binary post data that needs to be parsed
@@ -342,40 +309,13 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         log.debug("Deleting TAR file " + imageTarPath)
         os.remove(imageTarPath)
 
-        # Create the XML document to send back
-        doc = xml.dom.minidom.Document()
-
-        uploadPhotoResponseElement = doc.createElement("UploadPhotoResponse")
-        successElement = doc.createElement("success")
-        successElementText = doc.createTextNode("true")
-
-        successElement.appendChild(successElementText)
-        uploadPhotoResponseElement.appendChild(successElement)
-
-        return self.render_xml(uploadPhotoResponseElement)
+        return self.render_xml("UploadPhotoResponse", {"success": "true"})
 
     def getPhotoStatus(self, postData):
         handler = EyeFiContentHandler()
         xml.sax.parseString(postData, handler)
 
-        # Create the XML document to send back
-        doc = xml.dom.minidom.Document()
-
-        element = doc.createElement("GetPhotoStatusResponse")
-        element.setAttribute("xmlns", "http://localhost/api/soap/eyefilm")
-
-        fileidElement = doc.createElement("fileid")
-        fileidElementText = doc.createTextNode("1")
-        fileidElement.appendChild(fileidElementText)
-
-        offsetElement = doc.createElement("offset")
-        offsetElementText = doc.createTextNode("0")
-        offsetElement.appendChild(offsetElementText)
-
-        element.appendChild(fileidElement)
-        element.appendChild(offsetElement)
-
-        return self.render_xml(element)
+        return self.render_xml("GetPhotoStatusResponse", {"field": "1", "offset": "0"})
 
     def startSession(self, postData):
         log.debug("Delegating the XML parsing of startSession postData to EyeFiContentHandler()")
@@ -403,39 +343,13 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         # Hex encode the hash to obtain the final credential string
         credential = m.hexdigest()
 
-        # Create the XML document to send back
-        doc = xml.dom.minidom.Document()
-
-        element = doc.createElement("StartSessionResponse")
-        element.setAttribute("xmlns", "http://localhost/api/soap/eyefilm")
-
-        credentialElement = doc.createElement("credential")
-        credentialElementText = doc.createTextNode(credential)
-        credentialElement.appendChild(credentialElementText)
-
-        snonceElement = doc.createElement("snonce")
-        snonceElementText = doc.createTextNode("99208c155fc1883579cf0812ec0fe6d2")
-        snonceElement.appendChild(snonceElementText)
-
-        transfermodeElement = doc.createElement("transfermode")
-        transfermodeElementText = doc.createTextNode("2")
-        transfermodeElement.appendChild(transfermodeElementText)
-
-        transfermodetimestampElement = doc.createElement("transfermodetimestamp")
-        transfermodetimestampElementText = doc.createTextNode("1230268824")
-        transfermodetimestampElement.appendChild(transfermodetimestampElementText)
-
-        upsyncallowedElement = doc.createElement("upsyncallowed")
-        upsyncallowedElementText = doc.createTextNode("false")
-        upsyncallowedElement.appendChild(upsyncallowedElementText)
-
-        element.appendChild(credentialElement)
-        element.appendChild(snonceElement)
-        element.appendChild(transfermodeElement)
-        element.appendChild(transfermodetimestampElement)
-        element.appendChild(upsyncallowedElement)
-
-        return self.render_xml(element)
+        return self.render_xml("StartSessionResponse", {
+            "credential": credential,
+            "snonce": "99208c155fc1883579cf0812ec0fe6d2",
+            "transfermode": "2",
+            "transfermodetimestamp": "1230268824",
+            "upsyncallowed": "false"
+        })
 
 
 def main():
@@ -454,10 +368,6 @@ def main():
     logger.setup_logfile(logfile)
 
     server_address = (config.get('EyeFiServer', 'host_name'), config.getint('EyeFiServer', 'host_port'))
-
-    # run webserver as www-data - cant get it working
-    #if config.get('EyeFiServer','user_id')!='':
-    #  os.setuid(config.getint('EyeFiServer','user_id'))
 
     try:
         # Create an instance of an HTTP server. Requests will be handled
