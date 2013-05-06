@@ -18,9 +18,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-import os
-
-
 def mac_fmt(mac):
     return ":".join(mac[2*i:2*i+2] for i in range(6))
 

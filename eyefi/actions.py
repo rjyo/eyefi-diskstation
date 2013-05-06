@@ -21,22 +21,11 @@
 import os
 
 from twisted.python import log
-from twisted.internet import utils
-from twisted.internet.defer import DeferredList
 
 # geotag
 from eyefi.maclog import eyefi_parse, photo_macs
 from eyefi.google_loc import google_loc
 from eyefi.exif_gps import write_gps
-
-# flickr_upload
-from eyefi.twisted_flickrapi import TwistedFlickrAPI
-
-# extract_preview
-import pyexiv2
-assert pyexiv2.version_info[1] >= 2, "need at least pyexiv 0.2.2"
-
-
 
 class Action(object):
     name = "action_name"
@@ -55,45 +44,7 @@ class Action(object):
         return self.handle_photo(*args)
 
 
-_actions = []
-def register_action(action):
-    _actions.append(action)
-    return action
 
-
-def build_actions(cfg, cards):
-    actions = {}
-    for macaddress, card in cards.items():
-        h = []
-        for action in _actions:
-            if action.active_on_card(card):
-                h.append(action(cfg, card))
-        actions[macaddress] = h
-    return actions
-
-
-@register_action
-class ExtractPreview(Action):
-    name = "extract_preview"
-
-    def handle_photo(self, card, files):
-        for file in files[:]:
-            base, ext = os.path.splitext(file)
-            if ext.lower() in (".nef",):
-                i = pyexiv2.metadata.ImageMetadata(file)
-                i.read()
-                p = i.previews[-1]
-                p.write_to_file(str(base))
-                j = pyexiv2.metadata.ImageMetadata(str(base)+p.extension)
-                j.read()
-                i.copy(j, exif=True, iptc=True, xmp=True, comment=True)
-                j.write()
-                files.append(str(base) + p.extension) # beginning
-                log.msg("wrote preview", base, p.extension)
-        return card, files
-
-
-@register_action
 class Geotag(Action):
     name = "geotag"
 
@@ -125,47 +76,3 @@ class Geotag(Action):
                 loc["latitude"], loc["longitude"], loc.get("altitude", None),
                 "WGS-84", loc.get("accuracy", None), sidecar, xmp)
         return loc, photo
-
-
-@register_action
-class Geeqie(Action):
-    name = "geeqie"
-
-    def handle_photo(self, card, files):
-        d = utils.getProcessValue("/usr/bin/geeqie",
-                ["--remote", str(files[0])], os.environ)
-        d.addBoth(lambda _: (card, files)) # succeeds
-        return d
-
-
-@register_action
-class Flickr(Action):
-    name = "flickr"
-
-    def __init__(self, cfg, card):
-        key, secret = cfg.get("__main__", "flickr_key").split(":")
-        self.flickr = TwistedFlickrAPI(key, secret)
-        self.flickr.authenticate_console("write"
-            ).addCallback(log.msg, "got flickr token")
-        
-    def handle_photo(self, card, files):
-        ds = []
-        for file in files:
-            if os.path.splitext(file)[1].lower() in (".jpg",):
-                ds.append(self.flickr.upload(str(file),
-                is_public=card["flickr_public"] and "1" or "0"
-                    ).addCallback(log.msg, "upload to flickr"))
-        d = DeferredList(ds, fireOnOneErrback=1)
-        d.addCallback(lambda _: (card, files))
-        return d
-
-
-@register_action
-class Run(Action):
-    name = "run"
-
-    def handle_photo(self, card, files):
-        d = utils.getProcessOutput(card["run"], files, os.environ)
-        d.addCallback(log.msg)
-        d.addCallback(lambda _: (card, files))
-        return d

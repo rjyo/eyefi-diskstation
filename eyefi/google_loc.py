@@ -32,23 +32,26 @@ def google_loc(*macs, **args):
     base = {
         "version": "1.1.0",
         "host": "maps.google.com",
-        }
+    }
     base.update(args)
     for mac in macs:
         base.setdefault("wifi_towers", []).append({"mac_address": mac})
     d = getPage(LOC_BASE_URL, method="POST",
-            postdata=simplejson.dumps(base))
+                postdata=simplejson.dumps(base))
     d.addCallback(simplejson.loads)
     return d
+
 
 def main():
     from twisted.internet import reactor
     from twisted.python import log
     import sys
+
     log.startLogging(sys.stdout)
     google_loc(sys.argv[1:], request_address=True).addBoth(
-            log.msg).addBoth(lambda e: reactor.callLater(0, reactor.stop))
+        log.msg).addBoth(lambda e: reactor.callLater(0, reactor.stop))
     reactor.run()
+
 
 if __name__ == '__main__':
     main()
