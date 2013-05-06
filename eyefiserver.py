@@ -53,6 +53,7 @@ import ConfigParser
 # URLs.
 
 import eyefi.log as logger
+
 log = logger.setup_custom_logger()
 
 
@@ -182,13 +183,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
             log.debug("StartSession response: " + response)
 
-            self.send_response(200)
-            self.send_header('Date', self.date_time_string())
-            self.send_header('Pragma', 'no-cache')
-            self.send_header('Server', 'Eye-Fi Agent/2.0.4.0 (Windows XP SP2)')
-            self.send_header('Content-Type', 'text/xml; charset="utf-8"')
-            self.send_header('Content-Length', contentLength)
-            self.end_headers()
+            self.send_eyefi_header(contentLength)
 
             self.wfile.write(response)
             self.wfile.flush()
@@ -204,13 +199,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
             log.debug("GetPhotoStatus response: " + response)
 
-            self.send_response(200)
-            self.send_header('Date', self.date_time_string())
-            self.send_header('Pragma', 'no-cache')
-            self.send_header('Server', 'Eye-Fi Agent/2.0.4.0 (Windows XP SP2)')
-            self.send_header('Content-Type', 'text/xml; charset="utf-8"')
-            self.send_header('Content-Length', contentLength)
-            self.end_headers()
+            self.send_eyefi_header(contentLength)
 
             self.wfile.write(response)
             self.wfile.flush()
@@ -223,13 +212,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
             log.debug("Upload response: " + response)
 
-            self.send_response(200)
-            self.send_header('Date', self.date_time_string())
-            self.send_header('Pragma', 'no-cache')
-            self.send_header('Server', 'Eye-Fi Agent/2.0.4.0 (Windows XP SP2)')
-            self.send_header('Content-Type', 'text/xml; charset="utf-8"')
-            self.send_header('Content-Length', contentLength)
-            self.end_headers()
+            self.send_eyefi_header(contentLength)
 
             self.wfile.write(response)
             self.wfile.flush()
@@ -241,36 +224,42 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
             contentLength = len(response)
 
             log.debug("MarkLastPhotoInRoll response: " + response)
-            self.send_response(200)
-            self.send_header('Date', self.date_time_string())
-            self.send_header('Pragma', 'no-cache')
-            self.send_header('Server', 'Eye-Fi Agent/2.0.4.0 (Windows XP SP2)')
-            self.send_header('Content-Type', 'text/xml; charset="utf-8"')
-            self.send_header('Content-Length', contentLength)
-            self.send_header('Connection', 'Close')
-            self.end_headers()
+            self.send_eyefi_header(contentLength, close=True)
 
             self.wfile.write(response)
             self.wfile.flush()
 
             log.debug("Connection closed.")
 
-    # Handles MarkLastPhotoInRoll action
-    def markLastPhotoInRoll(self, postData):
+    def render_xml(self, bodyElement):
         # Create the XML document to send back
         doc = xml.dom.minidom.Document()
 
         SOAPElement = doc.createElementNS("http://schemas.xmlsoap.org/soap/envelope/", "SOAP-ENV:Envelope")
         SOAPElement.setAttribute("xmlns:SOAP-ENV", "http://schemas.xmlsoap.org/soap/envelope/")
         SOAPBodyElement = doc.createElement("SOAP-ENV:Body")
-
-        markLastPhotoInRollResponseElement = doc.createElement("MarkLastPhotoInRollResponse")
-
-        SOAPBodyElement.appendChild(markLastPhotoInRollResponseElement)
+        SOAPBodyElement.appendChild(bodyElement)
         SOAPElement.appendChild(SOAPBodyElement)
         doc.appendChild(SOAPElement)
 
         return doc.toxml(encoding="UTF-8")
+
+    def send_eyefi_header(self, length, close=False):
+        self.send_response(200)
+        self.send_header('Date', self.date_time_string())
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Server', 'Eye-Fi Agent/2.0.4.0 (Windows XP SP2)')
+        self.send_header('Content-Type', 'text/xml; charset="utf-8"')
+        self.send_header('Content-Length', length)
+        if close:
+            self.send_header('Connection', 'Close')
+        self.end_headers()
+
+    # Handles MarkLastPhotoInRoll action
+    def markLastPhotoInRoll(self, postData):
+        # Create the XML document to send back
+        doc = xml.dom.minidom.Document()
+        return self.render_xml(doc.createElement("MarkLastPhotoInRollResponse"))
 
     # Handles receiving the actual photograph from the card.
     # postData will most likely contain multipart binary post data that needs to be parsed
@@ -304,6 +293,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         soapEnvelope = form['SOAPENVELOPE'][0]
         log.debug("SOAPENVELOPE: " + soapEnvelope)
         handler = EyeFiContentHandler()
+        xml.sax.parseString(soapEnvelope, handler)
 
         log.debug("Extracted elements: " + str(handler.extractedElements))
 
@@ -355,10 +345,6 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         # Create the XML document to send back
         doc = xml.dom.minidom.Document()
 
-        SOAPElement = doc.createElementNS("http://schemas.xmlsoap.org/soap/envelope/", "SOAP-ENV:Envelope")
-        SOAPElement.setAttribute("xmlns:SOAP-ENV", "http://schemas.xmlsoap.org/soap/envelope/")
-        SOAPBodyElement = doc.createElement("SOAP-ENV:Body")
-
         uploadPhotoResponseElement = doc.createElement("UploadPhotoResponse")
         successElement = doc.createElement("success")
         successElementText = doc.createTextNode("true")
@@ -366,25 +352,17 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         successElement.appendChild(successElementText)
         uploadPhotoResponseElement.appendChild(successElement)
 
-        SOAPBodyElement.appendChild(uploadPhotoResponseElement)
-        SOAPElement.appendChild(SOAPBodyElement)
-        doc.appendChild(SOAPElement)
-
-        return doc.toxml(encoding="UTF-8")
+        return self.render_xml(uploadPhotoResponseElement)
 
     def getPhotoStatus(self, postData):
         handler = EyeFiContentHandler()
-        parser = xml.sax.parseString(postData, handler)
+        xml.sax.parseString(postData, handler)
 
         # Create the XML document to send back
         doc = xml.dom.minidom.Document()
 
-        SOAPElement = doc.createElementNS("http://schemas.xmlsoap.org/soap/envelope/", "SOAP-ENV:Envelope")
-        SOAPElement.setAttribute("xmlns:SOAP-ENV", "http://schemas.xmlsoap.org/soap/envelope/")
-        SOAPBodyElement = doc.createElement("SOAP-ENV:Body")
-
-        getPhotoStatusResponseElement = doc.createElement("GetPhotoStatusResponse")
-        getPhotoStatusResponseElement.setAttribute("xmlns", "http://localhost/api/soap/eyefilm")
+        element = doc.createElement("GetPhotoStatusResponse")
+        element.setAttribute("xmlns", "http://localhost/api/soap/eyefilm")
 
         fileidElement = doc.createElement("fileid")
         fileidElementText = doc.createTextNode("1")
@@ -394,19 +372,15 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         offsetElementText = doc.createTextNode("0")
         offsetElement.appendChild(offsetElementText)
 
-        getPhotoStatusResponseElement.appendChild(fileidElement)
-        getPhotoStatusResponseElement.appendChild(offsetElement)
+        element.appendChild(fileidElement)
+        element.appendChild(offsetElement)
 
-        SOAPBodyElement.appendChild(getPhotoStatusResponseElement)
-
-        SOAPElement.appendChild(SOAPBodyElement)
-        doc.appendChild(SOAPElement)
-
-        return doc.toxml(encoding="UTF-8")
+        return self.render_xml(element)
 
     def startSession(self, postData):
         log.debug("Delegating the XML parsing of startSession postData to EyeFiContentHandler()")
         handler = EyeFiContentHandler()
+        xml.sax.parseString(postData, handler)
 
         log.debug("Extracted elements: " + str(handler.extractedElements))
 
@@ -432,12 +406,8 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         # Create the XML document to send back
         doc = xml.dom.minidom.Document()
 
-        SOAPElement = doc.createElementNS("http://schemas.xmlsoap.org/soap/envelope/", "SOAP-ENV:Envelope")
-        SOAPElement.setAttribute("xmlns:SOAP-ENV", "http://schemas.xmlsoap.org/soap/envelope/")
-        SOAPBodyElement = doc.createElement("SOAP-ENV:Body")
-
-        startSessionResponseElement = doc.createElement("StartSessionResponse")
-        startSessionResponseElement.setAttribute("xmlns", "http://localhost/api/soap/eyefilm")
+        element = doc.createElement("StartSessionResponse")
+        element.setAttribute("xmlns", "http://localhost/api/soap/eyefilm")
 
         credentialElement = doc.createElement("credential")
         credentialElementText = doc.createTextNode(credential)
@@ -459,18 +429,13 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         upsyncallowedElementText = doc.createTextNode("false")
         upsyncallowedElement.appendChild(upsyncallowedElementText)
 
-        startSessionResponseElement.appendChild(credentialElement)
-        startSessionResponseElement.appendChild(snonceElement)
-        startSessionResponseElement.appendChild(transfermodeElement)
-        startSessionResponseElement.appendChild(transfermodetimestampElement)
-        startSessionResponseElement.appendChild(upsyncallowedElement)
+        element.appendChild(credentialElement)
+        element.appendChild(snonceElement)
+        element.appendChild(transfermodeElement)
+        element.appendChild(transfermodetimestampElement)
+        element.appendChild(upsyncallowedElement)
 
-        SOAPBodyElement.appendChild(startSessionResponseElement)
-
-        SOAPElement.appendChild(SOAPBodyElement)
-        doc.appendChild(SOAPElement)
-
-        return doc.toxml(encoding="UTF-8")
+        return self.render_xml(element)
 
 
 def main():
