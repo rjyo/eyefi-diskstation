@@ -1,0 +1,10 @@
+.DS_Store
+pids
+logs
+nohup.out
+dump
+tmp
+dist
+cache
+download
+
