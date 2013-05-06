@@ -42,21 +42,19 @@ import SocketServer
 from datetime import datetime
 import ConfigParser
 
-
-"""
-General architecture notes
-
-
-This is a standalone Eye-Fi Server that is designed to take the place of the Eye-Fi Manager.
-
-
-Starting this server creates a listener on port 59278. I use the BaseHTTPServer class included
-with Python. I look for specific POST/GET request URLs and execute functions based on those
-URLs.
-"""
+# General architecture notes
+#
+#
+# This is a standalone Eye-Fi Server that is designed to take the place of the Eye-Fi Manager.
+#
+#
+# Starting this server creates a listener on port 59278. I use the BaseHTTPServer class included
+# with Python. I look for specific POST/GET request URLs and execute functions based on those
+# URLs.
 
 import eyefi.log as logger
 log = logger.setup_custom_logger()
+
 
 # Eye Fi XML SAX ContentHandler
 class EyeFiContentHandler(ContentHandler):
@@ -137,25 +135,13 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         log.debug(self.command + " " + self.path + " " + self.request_version)
 
-        SOAPAction = ""
         log.debug("Headers received in GET request:")
         for headerName in self.headers.keys():
             for headerValue in self.headers.getheaders(headerName):
                 log.debug(headerName + ": " + headerValue)
-                if headerName == "soapaction":
-                    SOAPAction = headerValue
-
-        # couldnt get this to work ..
-        #if((self.client_address == "localhost") and (self.path == "/api/soap/eyefilm/v1x") and (SOAPAction == "\"urn:StopServer\"")):
-        #  eyeFiLogger.debug("Got StopServer request .. stopping server")
-        #  self.server.stop()
-        # or, for python 2.6>
-        #  self.server.shutdown()
 
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
-        # I should be sending a Content-Length header with HTTP/1.1 but I am being lazy
-        # self.send_header('Content-length', '123')
         self.end_headers()
         self.wfile.write(self.client_address)
         self.wfile.write(self.headers)
@@ -173,36 +159,23 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         for headerName in self.headers.keys():
             for headerValue in self.headers.getheaders(headerName):
 
-                if ( headerName == "soapaction"):
+                if headerName == "soapaction":
                     SOAPAction = headerValue
 
-                if ( headerName == "content-length"):
+                if "content-length" == headerName:
                     contentLength = int(headerValue)
 
                 log.debug(headerName + ": " + headerValue)
-
 
         # Read contentLength bytes worth of data
         log.debug("Attempting to read " + str(contentLength) + " bytes of data")
         postData = self.rfile.read(contentLength)
         log.debug("Finished reading " + str(contentLength) + " bytes of data")
 
-        # TODO: Implement some kind of visual progress bar
-        # bytesRead = 0
-        # postData = ""
-
-        # while(bytesRead < contentLength):
-        #  postData = postData + self.rfile.read(1)
-        #   bytesRead = bytesRead + 1
-
-        #  if(bytesRead % 10000 == 0):
-        #    print "#",
-
-
         # Perform action based on path and SOAPAction
         # A SOAPAction of StartSession indicates the beginning of an EyeFi
         # authentication request
-        if ((self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:StartSession\"")):
+        if (self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:StartSession\""):
             log.debug("Got StartSession request")
             response = self.startSession(postData)
             contentLength = len(response)
@@ -223,7 +196,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
         # GetPhotoStatus allows the card to query if a photo has been uploaded
         # to the server yet
-        if ((self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:GetPhotoStatus\"")):
+        if (self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:GetPhotoStatus\""):
             log.debug("Got GetPhotoStatus request")
 
             response = self.getPhotoStatus(postData)
@@ -242,9 +215,8 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(response)
             self.wfile.flush()
 
-
         # If the URL is upload and there is no SOAPAction the card is ready to send a picture to me
-        if ((self.path == "/api/soap/eyefilm/v1/upload") and (SOAPAction == "")):
+        if (self.path == "/api/soap/eyefilm/v1/upload") and (SOAPAction == ""):
             log.debug("Got upload request")
             response = self.uploadPhoto(postData)
             contentLength = len(response)
@@ -263,7 +235,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         # If the URL is upload and SOAPAction is MarkLastPhotoInRoll
-        if ((self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:MarkLastPhotoInRoll\"")):
+        if (self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:MarkLastPhotoInRoll\""):
             log.debug("Got MarkLastPhotoInRoll request")
             response = self.markLastPhotoInRoll(postData)
             contentLength = len(response)
@@ -283,7 +255,6 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
             log.debug("Connection closed.")
 
-
     # Handles MarkLastPhotoInRoll action
     def markLastPhotoInRoll(self, postData):
         # Create the XML document to send back
@@ -300,7 +271,6 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         doc.appendChild(SOAPElement)
 
         return doc.toxml(encoding="UTF-8")
-
 
     # Handles receiving the actual photograph from the card.
     # postData will most likely contain multipart binary post data that needs to be parsed
@@ -334,7 +304,6 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         soapEnvelope = form['SOAPENVELOPE'][0]
         log.debug("SOAPENVELOPE: " + soapEnvelope)
         handler = EyeFiContentHandler()
-        parser = xml.sax.parseString(soapEnvelope, handler)
 
         log.debug("Extracted elements: " + str(handler.extractedElements))
 
@@ -403,7 +372,6 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
         return doc.toxml(encoding="UTF-8")
 
-
     def getPhotoStatus(self, postData):
         handler = EyeFiContentHandler()
         parser = xml.sax.parseString(postData, handler)
@@ -436,11 +404,9 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
         return doc.toxml(encoding="UTF-8")
 
-
     def startSession(self, postData):
         log.debug("Delegating the XML parsing of startSession postData to EyeFiContentHandler()")
         handler = EyeFiContentHandler()
-        parser = xml.sax.parseString(postData, handler)
 
         log.debug("Extracted elements: " + str(handler.extractedElements))
 
@@ -449,7 +415,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         log.debug("Setting Eye-Fi upload key to " + self.server.config.get('EyeFiServer', 'upload_key'))
 
         credentialString = handler.extractedElements["macaddress"] + handler.extractedElements[
-            "cnonce"] + self.server.config.get('EyeFiServer', 'upload_key');
+            "cnonce"] + self.server.config.get('EyeFiServer', 'upload_key')
         log.debug("Concatenated credential string (pre MD5): " + credentialString)
 
         # Return the binary data represented by the hexadecimal string
@@ -555,4 +521,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
