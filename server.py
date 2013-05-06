@@ -24,7 +24,6 @@ import sys
 import os
 import socket
 import StringIO
-import ConfigParser
 from datetime import datetime
 
 import hashlib
@@ -39,7 +38,9 @@ import BaseHTTPServer
 import SocketServer
 
 from eyefi.sax_handler import EyeFiContentHandler
+import eyefi.config as config
 import eyefi.log as logger
+
 log = logger.setup_custom_logger()
 
 # General architecture notes
@@ -53,6 +54,8 @@ log = logger.setup_custom_logger()
 # URLs.
 
 # Implements an EyeFi server
+
+
 class EyeFiServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     def server_bind(self):
 
@@ -137,57 +140,33 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         # authentication request
         if (self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:StartSession\""):
             log.debug("Got StartSession request")
-            response = self.startSession(postData)
-            contentLength = len(response)
-
-            log.debug("StartSession response: " + response)
-
-            self.send_eyefi_header(contentLength)
-
-            self.wfile.write(response)
-            self.wfile.flush()
+            self.do_response(self.startSession(postData))
             self.handle_one_request()
 
         # GetPhotoStatus allows the card to query if a photo has been uploaded
         # to the server yet
         if (self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:GetPhotoStatus\""):
             log.debug("Got GetPhotoStatus request")
-
-            response = self.getPhotoStatus(postData)
-            contentLength = len(response)
-
-            log.debug("GetPhotoStatus response: " + response)
-
-            self.send_eyefi_header(contentLength)
-
-            self.wfile.write(response)
-            self.wfile.flush()
+            self.do_response(self.getPhotoStatus(postData))
 
         # If the URL is upload and there is no SOAPAction the card is ready to send a picture to me
         if (self.path == "/api/soap/eyefilm/v1/upload") and (SOAPAction == ""):
             log.debug("Got upload request")
-            response = self.uploadPhoto(postData)
-            contentLength = len(response)
-
-            log.debug("Upload response: " + response)
-
-            self.send_eyefi_header(contentLength)
-
-            self.wfile.write(response)
-            self.wfile.flush()
+            self.do_response(self.uploadPhoto(postData))
 
         # If the URL is upload and SOAPAction is MarkLastPhotoInRoll
         if (self.path == "/api/soap/eyefilm/v1") and (SOAPAction == "\"urn:MarkLastPhotoInRoll\""):
             log.debug("Got MarkLastPhotoInRoll request")
-            response = self.markLastPhotoInRoll(postData)
-            contentLength = len(response)
+            self.do_response(self.markLastPhotoInRoll(postData), close=True)
 
-            log.debug("MarkLastPhotoInRoll response: " + response)
-            self.send_eyefi_header(contentLength, close=True)
 
-            self.wfile.write(response)
-            self.wfile.flush()
-
+    def do_response(self, response, close=False):
+        contentLength = len(response)
+        log.debug("response: " + response)
+        self.send_eyefi_header(contentLength, close=close)
+        self.wfile.write(response)
+        self.wfile.flush()
+        if close:
             log.debug("Connection closed.")
 
     def render_xml(self, name, elements):
@@ -274,7 +253,7 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         #eyeFiLogger.debug("Using mode " + mode)
 
         now = datetime.now()
-        uploadDir = now.strftime(self.server.config.get('EyeFiServer', 'upload_dir'))
+        uploadDir = now.strftime(config.data["upload_dir"] + config.data["upload_subdir"])
         if not os.path.isdir(uploadDir):
             os.makedirs(uploadDir)
             #if uid!=0 and gid!=0:
@@ -326,10 +305,10 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
         # Retrieve it from C:\Documents and Settings\<User>\Application Data\Eye-Fi\Settings.xml
 
-        log.debug("Setting Eye-Fi upload key to " + self.server.config.get('EyeFiServer', 'upload_key'))
+        log.debug("Setting Eye-Fi upload key to " + config.data["upload_key"])
 
         credentialString = handler.extractedElements["macaddress"] + handler.extractedElements[
-            "cnonce"] + self.server.config.get('EyeFiServer', 'upload_key')
+            "cnonce"] + config.data["upload_key"]
         log.debug("Concatenated credential string (pre MD5): " + credentialString)
 
         # Return the binary data represented by the hexadecimal string
@@ -357,39 +336,33 @@ def main():
         print "usage: %s configfile logfile" % os.path.basename(sys.argv[0])
         sys.exit(2)
 
-    configfile = sys.argv[1]
-    log.info("Reading config " + configfile)
-
-    config = ConfigParser.SafeConfigParser()
-    config.read(configfile)
-
     # open file logging
-    logfile = sys.argv[2]
+    logfile = sys.argv[1]
     logger.setup_logfile(logfile)
 
-    server_address = (config.get('EyeFiServer', 'host_name'), config.getint('EyeFiServer', 'host_port'))
+    server_address = config.data["host_name"], config.data["host_port"]
 
     try:
         # Create an instance of an HTTP server. Requests will be handled
         # by the class EyeFiRequestHandler
-        eyeFiServer = EyeFiServer(server_address, EyeFiRequestHandler)
-        eyeFiServer.config = config
+        server = EyeFiServer(server_address, EyeFiRequestHandler)
+        server.config = config
 
         # Spawn a new thread for the server
-        # thread.start_new_thread(eyeFiServer.serve, ())
+        # thread.start_new_thread(server.serve, ())
         # eyeFiLogger.info("Eye-Fi server started listening on port " + str(server_address[1]))
 
         log.info("Eye-Fi server started listening on port " + str(server_address[1]))
-        eyeFiServer.serve_forever()
+        server.serve_forever()
 
         #raw_input("\nPress <RETURN> to stop server\n")
-        #eyeFiServer.stop()
+        #server.stop()
         #eyeFiLogger.info("Eye-Fi server stopped")
-        #eyeFiServer.socket.close()
+        #server.socket.close()
 
     except KeyboardInterrupt:
-        eyeFiServer.socket.close()
-        #eyeFiServer.shutdown()
+        server.socket.close()
+        #server.shutdown()
 
         #eyeFiLogger.info("Eye-Fi server stopped")
 
