@@ -1,4 +1,4 @@
-Eye-Fi server for DiskStation
+Eye-Fi Server for DiskStation
 ===
 
 Eye-Fi server for DiskStation. Geotagging with xmp file supported.
@@ -42,7 +42,22 @@ To start when disk-station reboots, edit `/etc/rc.local` and add the following l
 
 LICENSE
 ---
-Sources from are the following open source projects are partly used and integrated
+Sources from are the following open source projects are referenced and partly copied to this project
 
     https://github.com/tachang/EyeFiServer
     https://launchpad.net/eyefi‎
+    https://github.com/omelhus/EyefiServerSynology
+    
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
