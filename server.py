@@ -1,21 +1,23 @@
 #!/usr/bin/env python
 
 """
-* Copyright (c) 2009, Jeffrey Tchang
-* Additional *pike
-* All rights reserved.
-*
-*
-* THIS SOFTWARE IS PROVIDED ''AS IS'' AND ANY
-* EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY
-* DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-* LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-* ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-* SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# Copyright (c) 2009, Jeffrey Tchang
+# Additional *pike
+# Additional 2013 by Rakuraku Jyo
+#
+# All rights reserved.
+#
+#
+# THIS SOFTWARE IS PROVIDED ''AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 import cgi
@@ -23,7 +25,6 @@ import cgi
 import sys
 import os
 import socket
-import StringIO
 from datetime import datetime
 
 import hashlib
@@ -36,8 +37,10 @@ import xml.dom.minidom
 from BaseHTTPServer import BaseHTTPRequestHandler
 import BaseHTTPServer
 import SocketServer
+import StringIO
 
 from eyefi.sax_handler import EyeFiContentHandler
+from eyefi.geotag import handle_photo
 import eyefi.config as config
 import eyefi.log as logger
 
@@ -74,16 +77,6 @@ class EyeFiServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
 
             except socket.timeout:
                 pass
-
-                #def stop(self):
-                #  self.run = False
-
-                # alt serve_forever method for python <2.6
-                # because we want a shutdown mech ..
-                #def serve(self):
-                #  while self.run:
-                #    self.handle_request()
-                #  self.socket.close()
 
 
 # This class is responsible for handling HTTP requests passed to it.
@@ -159,15 +152,20 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
             log.debug("Got MarkLastPhotoInRoll request")
             self.do_response(self.markLastPhotoInRoll(postData), close=True)
 
-
     def do_response(self, response, close=False):
-        contentLength = len(response)
         log.debug("response: " + response)
-        self.send_eyefi_header(contentLength, close=close)
+        self.send_response(200)
+        self.send_header('Date', self.date_time_string())
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Server', 'Eye-Fi Agent/2.0.4.0 (Windows XP SP2)')
+        self.send_header('Content-Type', 'text/xml; charset="utf-8"')
+        self.send_header('Content-Length', len(response))
+        if close:
+            self.send_header('Connection', 'Close')
+            log.debug("Connection closed.")
+        self.end_headers()
         self.wfile.write(response)
         self.wfile.flush()
-        if close:
-            log.debug("Connection closed.")
 
     def render_xml(self, name, elements):
         # Create the XML document to send back
@@ -203,14 +201,11 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
     # Handles MarkLastPhotoInRoll action
     def markLastPhotoInRoll(self, postData):
-        # Create the XML document to send back
-        doc = xml.dom.minidom.Document()
         return self.render_xml("MarkLastPhotoInRollResponse", {})
 
     # Handles receiving the actual photograph from the card.
     # postData will most likely contain multipart binary post data that needs to be parsed
     def uploadPhoto(self, postData):
-
         # Take the postData string and work with it as if it were a file object
         postDataInMemoryFile = StringIO.StringIO(postData)
 
@@ -245,44 +240,22 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
 
         imageTarfileName = handler.extractedElements["filename"]
 
-        #pike
-        #uid = self.server.config.getint('EyeFiServer','upload_uid')
-        #gid = self.server.config.getint('EyeFiServer','upload_gid')
-        #mode = self.server.config.get('EyeFiServer','upload_mode')
-        #eyeFiLogger.debug("Using uid/gid %d/%d"%(uid,gid))
-        #eyeFiLogger.debug("Using mode " + mode)
-
         now = datetime.now()
         uploadDir = now.strftime(config.data["upload_dir"] + config.data["upload_subdir"])
         if not os.path.isdir(uploadDir):
             os.makedirs(uploadDir)
-            #if uid!=0 and gid!=0:
-            #  os.chown(uploadDir,uid,gid)
-            #if mode!="":
-            #  os.chmod(uploadDir,string.atoi(mode))
 
         imageTarPath = os.path.join(uploadDir, imageTarfileName)
         log.debug("Generated path " + imageTarPath)
 
-        fileHandle = open(imageTarPath, 'wb')
         log.debug("Opened file " + imageTarPath + " for binary writing")
-
+        fileHandle = open(imageTarPath, 'wb')
         fileHandle.write(form['FILENAME'][0])
-        log.debug("Wrote file " + imageTarPath)
-
         fileHandle.close()
-        log.debug("Closed file " + imageTarPath)
-
-        #if uid!=0 and gid!=0:
-        #  os.chown(imageTarPath,uid,gid)
-        #if mode!="":
-        #  os.chmod(imageTarPath,string.atoi(mode))
 
         log.debug("Extracting TAR file " + imageTarPath)
         imageTarfile = tarfile.open(imageTarPath)
         imageTarfile.extractall(path=uploadDir)
-
-        log.debug("Closing TAR file " + imageTarPath)
         imageTarfile.close()
 
         log.debug("Deleting TAR file " + imageTarPath)
@@ -302,9 +275,6 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         xml.sax.parseString(postData, handler)
 
         log.debug("Extracted elements: " + str(handler.extractedElements))
-
-        # Retrieve it from C:\Documents and Settings\<User>\Application Data\Eye-Fi\Settings.xml
-
         log.debug("Setting Eye-Fi upload key to " + config.data["upload_key"])
 
         credentialString = handler.extractedElements["macaddress"] + handler.extractedElements[
@@ -331,40 +301,49 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         })
 
 
-def main():
-    if len(sys.argv) < 2:
-        print "usage: %s configfile logfile" % os.path.basename(sys.argv[0])
-        sys.exit(2)
+def process_logs():
+    path = config.data["upload_dir"]
+    log.debug("Start to process files under %s", path)
 
-    # open file logging
-    logfile = sys.argv[1]
-    logger.setup_logfile(logfile)
+    files = [os.path.join(root, name)
+             for root, dirs, files in os.walk(path)
+             for name in files
+             if name.lower().endswith(".log")]
 
+    while len(files):
+        handle_photo(files)
+
+
+def start_server():
     server_address = config.data["host_name"], config.data["host_port"]
 
     try:
-        # Create an instance of an HTTP server. Requests will be handled
-        # by the class EyeFiRequestHandler
+        # Create an instance of an HTTP server. Requests will be handled by EyeFiRequestHandler
         server = EyeFiServer(server_address, EyeFiRequestHandler)
         server.config = config
 
-        # Spawn a new thread for the server
-        # thread.start_new_thread(server.serve, ())
-        # eyeFiLogger.info("Eye-Fi server started listening on port " + str(server_address[1]))
-
         log.info("Eye-Fi server started listening on port " + str(server_address[1]))
         server.serve_forever()
-
-        #raw_input("\nPress <RETURN> to stop server\n")
-        #server.stop()
-        #eyeFiLogger.info("Eye-Fi server stopped")
-        #server.socket.close()
-
     except KeyboardInterrupt:
         server.socket.close()
-        #server.shutdown()
+        server.shutdown()
+        log.info("Eye-Fi server stopped")
 
-        #eyeFiLogger.info("Eye-Fi server stopped")
+
+def main():
+    if len(sys.argv) < 1:
+        print "usage: %s [ start | process ]" % os.path.basename(sys.argv[0])
+        print "       start   - start the eye-fi server"
+        print "       process - process the log files for geo locations"
+        sys.exit(2)
+
+    # open file logging
+    logger.setup_logfile(config.data["log_file"])
+
+    if sys.argv[1] == 'start':
+        start_server()
+    elif sys.argv[1] == 'process':
+        process_logs()
 
 
 if __name__ == '__main__':
