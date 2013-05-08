@@ -331,10 +331,10 @@ def start_server():
 
 
 def main():
-    if len(sys.argv) < 1:
+    if len(sys.argv) == 1:
         print "usage: %s [ start | process ]" % os.path.basename(sys.argv[0])
-        print "       start   - start the eye-fi server"
-        print "       process - process the log files for geo locations"
+        print "  start   - start the eye-fi server"
+        print "  process - process the log files for geo locations"
         sys.exit(2)
 
     # open file logging
@@ -343,6 +343,9 @@ def main():
     if sys.argv[1] == 'start':
         start_server()
     elif sys.argv[1] == 'process':
+        if not config.data["google_geo_key"]:
+            print("Google Geolocation API key is a must. Check eyefi/config.py")
+            sys.exit(2)
         process_logs()
 
 
