@@ -126,6 +126,9 @@ def google_loc(macs):
 
 
 def google_loc2(macs):
+    if not len(macs):
+        return None
+
     api_url = "maps.googleapis.com"
     headers = {"Host": api_url}
     params = "/maps/api/browserlocation/json?browser=none&sensor=false"
