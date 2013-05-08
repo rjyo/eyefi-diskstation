@@ -261,6 +261,9 @@ class EyeFiRequestHandler(BaseHTTPRequestHandler):
         log.debug("Deleting TAR file " + imageTarPath)
         os.remove(imageTarPath)
 
+        # process log
+        process_logs()
+
         return self.render_xml("UploadPhotoResponse", {"success": "true"})
 
     def getPhotoStatus(self, postData):
