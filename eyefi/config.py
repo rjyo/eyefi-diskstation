@@ -48,3 +48,7 @@ data["upload_subdir"] = "/%Y/%Y-%m-%d"
 data["google_geo_key"] = ""
 
 data["log_file"] = "/tmp/eyefi.log"
+
+# Delete log file after geo location processed
+
+data["delete_log"] = True

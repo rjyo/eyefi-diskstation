@@ -177,4 +177,5 @@ def handle_photo(files):
         log.debug("%s already existed, skipping" % xmpName)
 
     files.remove(logName)
-    os.remove(logName)
+    if config.data["delete_log"]:
+        os.remove(logName)
