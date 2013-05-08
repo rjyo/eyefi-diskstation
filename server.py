@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 """
 # Copyright (c) 2009, Jeffrey Tchang
