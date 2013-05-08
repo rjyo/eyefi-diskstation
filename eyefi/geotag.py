@@ -132,8 +132,8 @@ def google_loc2(macs):
     for mac in macs:
         params += "&wifi=mac:" + "-".join(mac["macAddress"].split(':')) \
                   + '|age:' + str(mac["age"]) \
-                  + '|ss:' + str(int(mac["signalToNoiseRatio"]) * -1)
-    log.debug('https://' + api_url + params)
+                  + '|ss:' + str(int(math.log10(mac['signalToNoiseRatio'] / 100.0) * 10 - 50))
+
     req = urllib2.Request('https://' + api_url + params, None, headers)
     try:
         f = urllib2.urlopen(req)
@@ -177,4 +177,4 @@ def handle_photo(files):
         log.debug("%s already existed, skipping" % xmpName)
 
     files.remove(logName)
-    os.remove(logName)
+    # os.remove(logName)
