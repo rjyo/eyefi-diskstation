@@ -44,6 +44,6 @@ def setup_custom_logger():
 
 def setup_logfile(logfile):
     logger = get_custom_logger()
-    fileHandler = logging.FileHandler(logfile, "w", encoding=None)
+    fileHandler = logging.FileHandler(logfile, "a", encoding=None)
     fileHandler.setFormatter(logFormat)
     logger.addHandler(fileHandler)

@@ -33,7 +33,7 @@ RUN
 To start and test, use
 
     git clone https://github.com/rjyo/eyefi-diskstation.git
-    nohup eyefi-diskstation/server.py start > /dev/null 2>&1 &
+    nohup /root/eyefi-diskstation/server.py start > /dev/null 2>&1 &
 
 To start when disk-station reboots, edit `/etc/rc.local` and add the following lines
 
