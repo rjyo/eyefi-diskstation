@@ -22,6 +22,7 @@
 import json
 import os
 import urllib2
+import math
 
 import eyefi.log as logger
 import eyefi.config as config
@@ -100,6 +101,10 @@ def google_loc(macs):
     :rtype: dict
     """
 
+    # Undocumented API, could be shutdown anytime
+    if not config.data["google_geo_key"]:
+        return google_loc2(macs)
+
     # Google can't find geo location with just one mac address
     if len(macs) < 2:
         return ""
@@ -117,6 +122,26 @@ def google_loc(macs):
     except urllib2.HTTPError, err:
         if err.code == 403:
             log.error("Google API rate limit exceeded")
+        raise err
+
+
+def google_loc2(macs):
+    api_url = "maps.googleapis.com"
+    headers = {"Host": api_url}
+    params = "/maps/api/browserlocation/json?browser=none&sensor=false"
+    for mac in macs:
+        params += "&wifi=mac:" + "-".join(mac["macAddress"].split(':')) \
+                  + '|age:' + str(mac["age"]) \
+                  + '|ss:' + str(int(mac["signalToNoiseRatio"]) * -1)
+    log.debug('https://' + api_url + params)
+    req = urllib2.Request('https://' + api_url + params, None, headers)
+    try:
+        f = urllib2.urlopen(req)
+        r = f.read()
+        f.close()
+        return json.loads(r)
+    except urllib2.HTTPError, err:
+        log.error("Error connecting to geo location service")
         raise err
 
 

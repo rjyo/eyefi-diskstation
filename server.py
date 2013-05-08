@@ -344,8 +344,7 @@ def main():
         start_server()
     elif sys.argv[1] == 'process':
         if not config.data["google_geo_key"]:
-            print("Google Geolocation API key is a must. Check eyefi/config.py")
-            sys.exit(2)
+            print("Google Geolocation API key not found. Using undocumented google geo API")
         process_logs()
 
 
